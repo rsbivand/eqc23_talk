@@ -1,0 +1,485 @@
+---
+title: "Class intervals for thematic mapping: implementations in R"
+author: Roger Bivand
+date: "September 2023"
+output:
+  beamer_presentation:
+    theme: "metropolis"
+    highlight: pygments
+    includes:
+      in_header: header.tex
+      keep_tex: true
+    latex_engine: xelatex
+classoption: "aspectratio=169"
+bibliography: RJreferences.bib
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\n \\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+knitr::opts_chunk$set(echo = TRUE, paged.print=FALSE)
+.libPaths(c(.libPaths()[1], paste(.libPaths()[1], "_retiring", sep="")))
+ow <- options("width"=72)
+```
+
+
+## Introduction
+
+- We will review briefly the background in applied cartography for using class intervals,
+
+- and describe the implementation of methods available in functionality available in R, in particular in `classInt` and associated packages.
+
+## Classed or unclassed
+
+- From @dickinson73 to @tyler10, via @slocumetal05, key handbooks on statistical mapping and thematic cartography present similar lists of ways of creating class intervals. 
+
+- These authorities stress the need for the creator of the thematic map to consider the message(s) being conveyed. 
+
+- One of the choices facing us is whether to use class intervals or unclassed maps, representing the variability of the values being mapped by pseudo-continuous variations in shading or colour [@tobler73], or rather to choose class intervals. 
+
+- The colour rendering technology of the output device will determine the discrete colur count available in the pseudo-continuous case. 
+
+
+## Class intervals
+
+- When class intervals are chosen, the legend constitutes a look-up table, from which the observer can readily read off which shading or colour corresponds to which value interval. 
+
+- Such quantising of course transforms interval or ratio-level data to the ordinal level, while retaining interval or ratio-level labels, as in a histogram
+
+- For nominal or ordinal data, the starting point for class intervals may be given by the definition of the discrete variables being mapped, but here again input categories may need to be merged to reach a sensible number of classes.
+
+## Cartograms
+
+- Neither choice avoids the basic challenge of the stronger visual impact of irregular polygonal observations with larger surface areas, but often administrative data is only available for such aggregates. 
+
+- When gridded data is available, or when cartograms are presented in place of maps of polygon boundaries, this challenge may be addressed but not eliminated. 
+
+- Because these adaptations also need to handle the visual representation of observed variables, they constitute a distinctly different problem, and will not be considered here. 
+
+## Border lines
+
+- Similarly, while the display of boundary lines between the regular or irregular polygon borders that show the support of the data being visualized is an important question, it will not be considered here.
+
+- We just note that without some even minimal border line, neighbouring observations with the same class (or value for unclassed maps) will be perceived as a single entity.
+
+
+# Applied thematic cartography
+
+## Applied thematic cartography
+
+- The authorities cited in the introduction [@dickinson73; @slocumetal05; @tyler10] write for users of thematic cartography rather than for those studying the underlying principles
+
+- Naturally, the underlying perceptual and semiotic principles are important, but are not central to this discussion in applied thematic cartography
+
+- Many users simply go with the default, and perhaps resent being asked to choose how to construct class intervals, despite there being no obvious automatic route
+
+- Software providers like ESRI provide some helpful guidance: https://pro.arcgis.com/en/pro-app/latest/help/mapping/layer-properties/data-classification-methods.htm, referring on to:  https://www.spatialanalysisonline.com/HTML/classification_and_clustering.htm
+
+
+## Class intervals in applied thematic cartography
+
+- As part of an online course: https://magrit-formations.github.io/, a useful distinction is drawn in https://magrit-formations.github.io/discretisation
+
+- This is based on the univariate classification of variables with many unique values, as clearly discrete variables with few categories do not require further discretisation (unless categories need grouping).
+
+- The important distinction is between symmetrical and skewed distributions, where variables displaying uniform and symmetrical distributions can use equal-width intervals, and symmetrical distributions can also use intevals based on multiples of standard deviations from the mean; unclassed maps may work best for uniform distributions
+
+- Skewed and multi-modal distributions should preferably not use these kinds of intervals, but rather quantiles (equal-count) or observed (natural) thresholds, and skewed distributions can also use geometric progression
+
+## Example data set: Lot Departément, France
+
+- @Giraud_Cartographie_avec_R_2023 use a data set for the Lot Departément in south-western France stored [here](https://github.com/rCarto/cartographie_avec_r/blob/main/data/lot46.gpkg) as a GeoPackage file, with a number of layers. 
+
+- We will use the 313 commune layer with administrative boundaries from 2020, and population and economic activity data also from 2020. 
+
+- This is a vector example data set; it would be interesting in parallel to consider a raster data set, but here we use only the vector representation.
+
+## Lot Departément geopackage
+
+We'll use `sf` to read the Lot GeoPackage file:
+
+```{r, size="scriptsize"}
+com <- sf::st_read("data/lot46.gpkg", layer = "commune")
+```
+
+and subset labels for the largest observations by population:
+
+```{r, size="scriptsize"}
+bigcom <- com[com$POPULATION > 2000,]
+bigcom <- bigcom[rev(order(bigcom$NOM_COM)),]
+```
+
+## Variables: population density and economically active population share
+
+Population density is taken as the population count divided by observation area in square km; percentage economically active of total population by summing women and men in four sectors:
+
+```{r, size="scriptsize"}
+(com$POPULATION / (sf::st_area(com) |> units::set_units(km^2))) |>
+    as.numeric() -> com$DENS
+vars <- c("AGR_H", "AGR_F", "IND_H", "IND_F", "BTP_H", "BTP_F", "TER_H", "TER_F")
+com |> subset(select=vars, drop=TRUE) |> apply(1, sum) |>
+    unname() -> com$POP_ACT
+com$SHARE_ACT <- 100 * com$POP_ACT / com$POPULATION
+```
+
+A Dougenik cartogram is also constructed:
+
+```{r, size="scriptsize"}
+ccom <- cartogram::cartogram_cont(com, weight="POPULATION", prepare = "none")
+```
+
+## DENS and SHARE_ACT histograms and density plots
+
+
+```{r, echo=FALSE}
+opar <- par(mfrow=c(2,2))
+plot(density(com$DENS))
+rug(com$DENS, col="grey")
+plot(density(com$SHARE_ACT))
+rug(com$SHARE_ACT, col="grey")
+hist(com$DENS)
+hist(com$SHARE_ACT)
+par(opar)
+```
+
+
+## DENS and SHARE_ACT distributions
+
+We can try to distinguish between symmetrical and skewed distibutions, but most tests for diverenge from the Normal lose power when the distribution is not Normal, DENS is obviously skewed, SHARE_ACT is symmetrical:
+
+```{r, size="scriptsize"}
+c(DENS=moments::agostino.test(com$DENS)$p.value < 0.005,
+    SHARE_ACT=moments::agostino.test(com$SHARE_ACT)$p.value < 0.005)
+```
+
+## No class intervals, population density map, Lot, 2020
+
+```{r, echo=FALSE}
+library(ggplot2)
+pal <- hcl.colors(313, palette="Dark Mint")
+ggplot(com) + geom_sf(aes(fill=DENS)) + theme_void() + 
+    scale_fill_gradientn(colors=rev(pal)) + 
+    geom_sf_label(data=bigcom, aes(label=NOM_COM))
+```
+
+
+## No class intervals, economically active population share map, Lot, 2020
+
+```{r, echo=FALSE}
+ggplot(com) + geom_sf(aes(fill=SHARE_ACT)) + theme_void() + 
+    scale_fill_gradientn(colors=rev(pal)) + 
+    geom_sf_label(data=bigcom, aes(label=NOM_COM))
+```
+
+
+
+## Kinds (styles) of class intervals
+
+- Books like @tyler10 offer similar lists of kinds (styles) of class intervals driven by data rather than fixed in advance by the user
+
+- Fixed class intervals may for example represent regulatory or customary limits, so the output maps shows where the chosen limits were exceeded
+
+- Where the data diverge from a fixed point, often zero in for example regression residuals, choosing ways of representing the fixed point in otherwise data-driven interval construction may matter
+
+- Both interval closure (left or right) and the data rounding/precision used in creating breaks do matter; more rounding may improve legend legibility
+
+## Equal-width class intervals
+
+- Equal-width (equal-step, `equal`) intervals take the range of the data and cut into $k$ intervals; the range may be buffered out a little; the break points may not be *pretty* numbers
+
+- `pretty` intervals may not yield exactly $k$ intervals, but instead of unrounded width values in `equal` intervals, the steps/intervals are `pretty`, 1, 2 or 5 times a power of 10; this approach was initially used for positioning and labelling ticks on scatterplot axes [@becker+chambers:84]
+
+- Both of these styles are data-driven but neither are compute-intensive, so are also suited to larger data sets; however, they should not be used with data other than those with uniform or symmetric distributions
+
+
+
+## Equal-width class intervals, economically active population share map, Lot, 2020
+
+
+```{r, echo=FALSE}
+library(mapsf)
+mf_map(com, var="SHARE_ACT", type="choro", breaks="equal", nbreaks=7, pal="Dark Mint", lwd=0.5, leg_title="percent economically active")
+mf_label(bigcom, var="NOM_COM", col="wheat4", cex=0.9, overlap=FALSE, halo=TRUE, bg="wheat1", r=0.05)
+mf_title("Economically active population share, Lot, 2020")
+```
+
+## "Pretty" class intervals, economically active population share map, Lot, 2020
+
+
+```{r, echo=FALSE}
+mf_map(com, var="SHARE_ACT", type="choro", breaks="pretty", nbreaks=7, pal="Dark Mint", lwd=0.5, leg_title="percent economically active")
+mf_label(bigcom, var="NOM_COM", col="wheat4", cex=0.9, overlap=FALSE, halo=TRUE, bg="wheat1", r=0.05)
+mf_title("Economically active population share, Lot, 2020")
+```
+
+## Standard-deviation class intervals
+
+- If the data are roughly symmetric, the class intervals may be constructed to cover the data range by $\bar{x} \pm m \hat{\sigma}$ where $\bar{x}$ is the sample mean, $\hat{\sigma}$ the standard deviation, and $m$ a sequence of intervals around zero
+
+- It is possible for example to set $m$ as `c(-Inf, -2, -1, 0, 1, 2, +Inf)`, or `c(-Inf, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, Inf)`
+
+- The `sd` style in `classInt::classIntervals` uses `pretty` run on the centred and scaled data to set $m$ by default
+
+- This style is data-driven but not compute-intensive, so also suited to larger data sets; however, it should not be used with data other than those with symmetric distributions
+
+
+## Standard-deviation class intervals, economically active population share map, Lot, 2020
+
+
+```{r, echo=FALSE}
+mf_map(com, var="SHARE_ACT", type="choro", breaks="sd", nbreaks=6, pal="Dark Mint", lwd=0.5, leg_title="percent economically active")
+mf_label(bigcom, var="NOM_COM", col="wheat4", cex=0.9, overlap=FALSE, halo=TRUE, bg="wheat1", r=0.05)
+mf_title("Economically active population share, Lot, 2020")
+```
+
+## Standard-deviation class intervals, economically active population share cartogram by population, 2020
+
+
+```{r, echo=FALSE}
+mf_map(ccom, var="SHARE_ACT", type="choro", breaks="quantile", nbreaks=7, pal="Dark Mint", lwd=0.5, leg_title="inhabitants per km2")
+mf_label(ccom[com$POPULATION > 2000,], var="NOM_COM", col="wheat4", cex=0.9, overlap=FALSE, halo=TRUE, bg="wheat1", r=0.05)
+mf_title("Economically active population share, Lot, 2020, Dougenik cartogram")
+```
+
+
+## Comparing class intervals (symmetrical)
+
+```{r, echo=FALSE}
+library(classInt)
+sd_SA <- classIntervals(com$SHARE_ACT, n=6, style="sd")
+pretty_SA <- classIntervals(com$SHARE_ACT, n=6, style="pretty")
+equal_SA <- classIntervals(com$SHARE_ACT, n=6, style="equal")
+```
+
+```{r, echo=FALSE}
+library(modelsummary)
+datasummary_crosstab(sd ~ pretty, 1 ~ 1 + N, data.frame(sd=findCols(sd_SA), pretty=findCols(pretty_SA)), title="Standard deviation by Pretty", output="markdown")
+```
+
+## Comparing class intervals, empirical CDF (economically active share, symmetrical)
+
+
+```{r, echo=FALSE}
+opar <- par(mfrow=c(2,3), mar=c(3, 4, 4, 2))
+pal <- rev(hcl.colors(length(pretty_SA$brks)-1L, palette="Dark Mint"))
+plot(pretty_SA, pal=pal, main="Pretty", xlab="")
+pal <- rev(hcl.colors(length(equal_SA$brks)-1L, palette="Dark Mint"))
+plot(equal_SA, pal=pal, main="Equal intervals", xlab="")
+pal <- rev(hcl.colors(length(sd_SA$brks)-1L, palette="Dark Mint"))
+plot(sd_SA, pal=pal, main="Standard deviation", xlab="")
+quantile_SA <- classIntervals(com$SHARE_ACT, n=6, style="quantile")
+pal <- rev(hcl.colors(length(quantile_SA$brks)-1L, palette="Dark Mint"))
+plot(quantile_SA, pal=pal, main="Quantile", xlab="")
+fisher_SA <- classIntervals(com$SHARE_ACT, n=6, style="fisher")
+pal <- rev(hcl.colors(length(fisher_SA$brks)-1L, palette="Dark Mint"))
+plot(fisher_SA, pal=pal, main="Fisher", xlab="")
+headtails_SA <- classIntervals(com$SHARE_ACT, n=6, style="headtails")
+pal <- rev(hcl.colors(length(headtails_SA$brks)-1L, palette="Dark Mint"))
+plot(headtails_SA, pal=pal, main="Headtails", xlab="")
+par(opar)
+```
+
+
+## Quantile class intervals
+
+- Quantiles cut the data into classes with equal counts as far as possible, and may be used with all kinds of data
+
+- It is worth noting that quantiles may be calculated in many ways; some earlier algorithms have been superceded [@doi:10.1080/00031305.1996.10473566], see also https://en.wikipedia.org/wiki/Quantile
+
+- `classInt::classIntervals` uses default `type=7`, but `type=8` might be preferable; this can be passed through in `classInt::classIntervals` and `tmap::tm_fill`, but not in `mapsf::mf_map` or `sf::plot.sf`
+
+## Quantile class intervals, population density, Lot, 2020
+
+
+```{r, echo=FALSE}
+mf_map(com, var="DENS", type="choro", breaks="quantile", nbreaks=7, pal="Dark Mint", lwd=0.5, leg_title="inhabitants per km2")
+mf_label(bigcom, var="NOM_COM", col="wheat4", cex=0.9, overlap=FALSE, halo=TRUE, bg="wheat1", r=0.05)
+mf_title("Population density, Lot, 2020")
+```
+
+## Observed threshold/natural breaks class intervals
+
+- @doi:10.1111/j.1467-8306.1971.tb00779.x `jenks` and @doi:10.1080/01621459.1958.10501479 `fisher` are legacy algorithms for data-driven univariate clustering, and are relatively compute-intensive; if there are many  observations, a random sample may be used to calculate the breaks anchored with `set.seed`
+
+- `stats::hclust` provides several hierachical clustering methods that work in a univariate setting, defaulting to complete clustering, but requires a dense distance matrix so is not suitable for large data sets
+
+- `stats::kmeans` can be used in a univariate setting, anchored with `set.seed` (but could be extended for larger data sets with `cluster::clara` which takes samples internally)
+
+- Bagged clustering may also be used `e1071::bclust`, combining `kmeans` and hierachical clustering [@9b129f95b53b44cea1295b7a1168d832, @doi:10.1016/S1441-3582.04.70088-9, @doi:10.1177/0047287502239037]
+
+## Fisher class intervals, population density, Lot, 2020
+
+
+```{r, echo=FALSE}
+mf_map(com, var="DENS", type="choro", breaks="fisher", nbreaks=7, pal="Dark Mint", lwd=0.5, leg_title="inhabitants per km2")
+mf_label(bigcom, var="NOM_COM", col="wheat4", cex=0.9, overlap=FALSE, halo=TRUE, bg="wheat1", r=0.05)
+mf_title("Population density, Lot, 2020")
+```
+## Fisher class intervals, population density cartogram by population, Lot, 2020
+
+
+```{r, echo=FALSE}
+mf_map(ccom, var="DENS", type="choro", breaks="fisher", nbreaks=7, pal="Dark Mint", lwd=0.5, leg_title="inhabitants per km2")
+mf_label(ccom[com$POPULATION > 2000,], var="NOM_COM", col="wheat4", cex=0.9, overlap=FALSE, halo=TRUE, bg="wheat1", r=0.05)
+mf_title("Population density, Lot, 2020, Dougenik cartogram")
+```
+## Comparing class intervals (skewed) i
+
+```{r, echo=FALSE}
+quantile_D <- classIntervals(com$DENS, n=7, style="quantile")
+fisher_D <- classIntervals(com$DENS, n=7, style="fisher")
+```
+
+```{r, echo=FALSE}
+datasummary_crosstab(quantile ~ fisher, 1 ~ 1 + N,  data.frame(quantile=findCols(quantile_D), fisher=findCols(fisher_D)), title="Fisher by Quantile", output="markdown")
+```
+
+
+## Geometric progression and other class intervals
+
+- The `geom` style in `mapsf` is based on a geometric progression, all variable values must be strictly greater than zero.
+
+- `headtails` based on @doi:10.1080/00330124.2012.700499 has been contributed by Diego Hernangómez
+
+- `box` was also contributed by Diego Hernangómez using the boxplot as a template
+
+- `maximum` was contributed by Josiah Parry
+
+## Geometric progression class intervals, population density, Lot, 2020
+
+
+```{r, echo=FALSE}
+mf_map(com, var="DENS", type="choro", breaks="geom", nbreaks=7, pal="Dark Mint", lwd=0.5, leg_title="inhabitants per km2")
+mf_label(bigcom, var="NOM_COM", col="wheat4", cex=0.9, overlap=FALSE, halo=TRUE, bg="wheat1", r=0.05)
+mf_title("Population density, Lot, 2020")
+```
+
+## Comparing class intervals (skewed) ii
+
+```{r, echo=FALSE}
+gbrks <- mapsf::mf_get_breaks(com$DENS, breaks="geom", k=7)
+geom_D <- classIntervals(com$DENS, style="fixed", fixedBreaks=gbrks)
+datasummary_crosstab(fisher ~ geom, 1 ~ 1 + N, data.frame(geom=findCols(geom_D), fisher=findCols(fisher_D)), title="Fisher by Geometric progression", output="markdown")
+```
+
+## Comparing class intervals, empirical CDF (population density, skewed)
+
+
+```{r, echo=FALSE, results="hide"}
+opar <- par(mfrow=c(2,3), mar=c(3, 4, 4, 2))
+pal <- rev(hcl.colors(length(quantile_D$brks)-1L, palette="Dark Mint"))
+plot(quantile_D, pal=pal, main="Quantile", xlab="")
+pal <- rev(hcl.colors(length(fisher_D$brks)-1L, palette="Dark Mint"))
+plot(fisher_D, pal=pal, main="Fisher", xlab="")
+pal <- rev(hcl.colors(length(geom_D$brks)-1L, palette="Dark Mint"))
+plot(geom_D, pal=pal, main="Geometric progression", xlab="")
+set.seed(1)
+bclust_D <- classIntervals(com$DENS, n=7, style="bclust")
+pal <- rev(hcl.colors(length(bclust_D$brks)-1L, palette="Dark Mint"))
+plot(bclust_D, pal=pal, main="Bagged Clustering", xlab="")
+set.seed(1)
+kmeans_D <- classIntervals(com$DENS, n=7, style="kmeans")
+pal <- rev(hcl.colors(length(kmeans_D$brks)-1L, palette="Dark Mint"))
+plot(kmeans_D, pal=pal, main="K-means", xlab="")
+headtails_D <- classIntervals(com$DENS, n=7, style="headtails")
+pal <- rev(hcl.colors(length(headtails_D$brks)-1L, palette="Dark Mint"))
+plot(headtails_D, pal=pal, main="Headtails", xlab="")
+par(opar)
+```
+
+## Comparing class intervals (skewed) iii
+
+```{r, echo=FALSE}
+datasummary_crosstab(fisher ~ kmeans, 1 ~ 1 + N, data.frame(kmeans=findCols(kmeans_D), fisher=findCols(fisher_D)), title="Fisher by K-means", output="markdown")
+```
+
+
+# Concluding remarks
+
+## How to document available choices?
+
+- A useful discussion around a github issue raised about the R `classInt` package (https://github.com/r-spatial/classInt/issues/41) highlighted the desirability of deeper reflection about the role played by class intervals in contemporary applied thematic cartography. 
+
+- In @sdsr (https://r-spatial.org/book/08-Plotting.html#sec-classintervals), only a brief paragraph is devoted to this topic, despite the use of the `classInt::classIntervals` function in thematic mapping in the sf, stars, tmap, mapsf, and other R packages. 
+
+
+## The `sf`, `stars` and `mapsf` packages
+
+- The sf package documentation provides figures showing consequences of different choices: https://r-spatial.github.io/sf/articles/sf5.html#class-intervals (using `pretty` as default), supplemented for stars by https://r-spatial.github.io/stars/reference/plot.html (using `quantile` as default). 
+
+- The mapsf package has more detailed documentation, including https://riatelab.github.io/mapsf/articles/mapsf.html#choropleth-map and `mapsf::mf_get_breaks` extending `classInt::classIntervals` (https://riatelab.github.io/mapsf/reference/mf_get_breaks.html); `mapsf::mf_map` uses `quantile` as default for choropleth maps
+
+- A work-in-progress bookdown book is available at https://rcarto.github.io/cartographie_avec_r/. 
+
+## The `tmap` package
+
+- The tmap package is evolving towards version 4, which is to be documented in a work-in-progress bookdown book, with class intervals presented in this section: https://r-tmap.github.io/tmap-book/visual-variables.html#color-scale-styles. 
+
+- Earlier versions of tmap are covered by @tmap, and a section in the second edition of the bookdown book https://r.geocompx.org/adv-map.html#color-settings [@geocomp]; `tmap::tm_fill` uses `pretty` as default for choropleth maps
+
+## The `terra` package - continuous
+
+
+```{r, echo=FALSE, results="hide"}
+com_sv <- terra::vect(com)
+opar <- par(mfrow=c(1,2))
+terra::plot(com_sv, "DENS", type="continuous", col=rev(hcl.colors(312, palette="Dark Mint")),
+    lwd=0.5, main="Population density", axes=FALSE)
+terra::plot(com_sv, "SHARE_ACT", type="continuous", col=rev(hcl.colors(312, palette="Dark Mint")),
+    lwd=0.5, main="Economically active", axes=FALSE)
+par(opar)
+```
+
+## The `terra` package - quantile
+
+```{r, echo=FALSE}
+opar <- par(mfrow=c(1,2))
+terra::plot(com_sv, "DENS", type="interval", col=rev(hcl.colors(7, palette="Dark Mint")),
+    breaks=7, breakby="cases", lwd=0.5, main="Population density", axes=FALSE)
+terra::plot(com_sv, "SHARE_ACT", type="interval", col=rev(hcl.colors(7, palette="Dark Mint")),
+    breaks=7, breakby="cases", lwd=0.5, main="Economically active", axes=FALSE)
+par(opar)
+```
+
+## The `terra` package - Fisher
+
+```{r, echo=FALSE}
+opar <- par(mfrow=c(1,2))
+terra::plot(com_sv, "DENS", type="interval", col=rev(hcl.colors(7, palette="Dark Mint")),
+    breaks=classInt::classIntervals(com_sv$DENS, n=7, style="fisher")$brks, 
+    lwd=0.5, main="Population density", axes=FALSE)
+terra::plot(com_sv, "SHARE_ACT", type="interval", col=rev(hcl.colors(7, palette="Dark Mint")),
+    breaks=classInt::classIntervals(com_sv$SHARE_ACT, n=7, style="fisher")$brks, 
+    lwd=0.5, main="Economically active", axes=FALSE)
+par(opar)
+```
+
+## The `terra` package - geometric progression
+
+```{r, echo=FALSE}
+gbrks <- mapsf::mf_get_breaks(com_sv$DENS, breaks="geom", k=7)
+terra::plot(com_sv, "DENS", type="interval", breaks=gbrks, main="Population density",
+    col=rev(hcl.colors(length(gbrks)-1, palette="Dark Mint")), lwd=0.5, axes=FALSE)
+```
+
+## Extensions
+
+- Similarly, the Python module `mapclassify` is a helper in the background rather than being offered the attention it arguably deserves. 
+
+- While many users will be more familiar with graphical user interfaces for choosing how to construct class intervals, programmatic interfaces reveal a good deal of what is happening when choices are made.
+
+
+## `sessionInfo` {.allowframebreaks}
+
+```{r, size="tiny"}
+sessionInfo()
+```
+
+
+# Aftermatter
+
+## References {.allowframebreaks}
