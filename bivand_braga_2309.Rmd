@@ -66,6 +66,16 @@ ow <- options("width"=72)
 
 - We just note that without some even minimal border line, neighbouring observations with the same class (or value for unclassed maps) will be perceived as a single entity.
 
+## Multivariate graphics and micromaps
+
+- Class intervals also matter in multivariate graphics, for example with a conditioning variable [@perpinan18; @sarkar08; @cleveland:93]; in this context `shingles` are class intervals that overlap
+
+- @wilkinson2006grammar proposed a grammar of graphics, implemented by @wickham16 in `ggplot2` and for mapping in `tmap` [@tmap]
+
+- These extensions are also taken up in `micromap` [@micromap], and described by @carr+pickle10, and implemented in `micromapST` [@JSSv063i03]
+
+- These aspects will not be considered here
+
 
 # Applied thematic cartography
 
