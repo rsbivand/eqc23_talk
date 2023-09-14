@@ -230,7 +230,7 @@ mf_title("Economically active population share, Lot, 2020")
 
 - If the data are roughly symmetric, the class intervals may be constructed to cover the data range by $\bar{x} \pm m \hat{\sigma}$ where $\bar{x}$ is the sample mean, $\hat{\sigma}$ the standard deviation, and $m$ a sequence of intervals around zero
 
-- It is possible for example to set $m$ as `c(-Inf, -2, -1, 0, 1, 2, +Inf)`, or `c(-Inf, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, Inf)`
+- It is possible for example to set $m$ as `c(-Inf, -2, -1, 0, 1, 2, +Inf)`, or `c(-Inf, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, +Inf)`
 
 - The `sd` style in `classInt::classIntervals` uses `pretty` run on the centred and scaled data to set $m$ by default
 
@@ -315,11 +315,11 @@ mf_title("Population density, Lot, 2020")
 
 - @doi:10.1111/j.1467-8306.1971.tb00779.x `jenks` and @doi:10.1080/01621459.1958.10501479 `fisher` are legacy algorithms for data-driven univariate clustering, and are relatively compute-intensive; if there are many  observations, a random sample may be used to calculate the breaks anchored with `set.seed`
 
-- `stats::hclust` provides several hierachical clustering methods that work in a univariate setting, defaulting to complete clustering, but requires a dense distance matrix so is not suitable for large data sets
+- `stats::hclust` provides several hierarchical clustering methods that work in a univariate setting, defaulting to complete clustering, but requires a dense distance matrix so is not suitable for large data sets
 
 - `stats::kmeans` can be used in a univariate setting, anchored with `set.seed` (but could be extended for larger data sets with `cluster::clara` which takes samples internally)
 
-- Bagged clustering may also be used `e1071::bclust`, combining `kmeans` and hierachical clustering [@9b129f95b53b44cea1295b7a1168d832, @doi:10.1016/S1441-3582.04.70088-9, @doi:10.1177/0047287502239037]
+- Bagged clustering may also be used `e1071::bclust`, combining `kmeans` and hierarchical clustering [@9b129f95b53b44cea1295b7a1168d832; @doi:10.1177/0047287502239037; @doi:10.1016/S1441-3582.04.70088-9]
 
 ## Fisher class intervals, population density, Lot, 2020
 
