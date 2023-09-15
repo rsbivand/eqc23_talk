@@ -33,6 +33,8 @@ ow <- options("width"=72)
 
 - and describe the implementation of methods available in functionality available in R, in particular in `classInt` and associated packages.
 
+- Materials available on https://github.com/rsbivand/eqc23_talk, https://rsbivand.github.io/eqc23_talk/
+
 ## Classed or unclassed
 
 - From @dickinson73 to @tyler10, via @slocumetal05, key handbooks on statistical mapping and thematic cartography present similar lists of ways of creating class intervals. 
