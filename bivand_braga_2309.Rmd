@@ -1,7 +1,8 @@
 ---
 title: "Class intervals for thematic mapping: implementations in R"
+subtitle: "European Colloquium on Theoretical and Quantitative Geography 2023, Braga (Portugal)"
 author: Roger Bivand
-date: "September 2023"
+date: "15 September 2023"
 output:
   beamer_presentation:
     theme: "metropolis"
